@@ -3,6 +3,9 @@ name: Build Custom ROM JairoEdition A14
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -25,6 +28,9 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # fetch full history in case git operations from scripts need it
+          fetch-depth: 0
 
       - name: Quick check: available disk
         run: |
@@ -75,7 +81,8 @@ jobs:
         with:
           path: |
             ~/.ccache
-          key: ${{ runner.os }}-ccache-${{ hashFiles('**/Android.bp') }}
+          # include local_manifests in the hash to reduce collisions when Android.bp come from repo sync
+          key: ${{ runner.os }}-ccache-${{ hashFiles('local_manifests/**','**/Android.bp') }}
           restore-keys: |
             ${{ runner.os }}-ccache-
 
@@ -90,7 +97,7 @@ jobs:
       - name: Install Repo tool
         run: |
           mkdir -p ~/bin
-          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          curl -sSfL https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
           chmod a+x ~/bin/repo
           sudo ln -sf ~/bin/repo /usr/bin/repo
 
@@ -110,10 +117,29 @@ jobs:
           cd ~/android
           repo init -u https://github.com/LineageOS/android.git -b lineage-19.1 --depth=1 --groups=all,-notdefault,-darwin,-windows
 
-      - name: Copy local manifests
+      - name: Copy local manifests (if present)
         run: |
-          mkdir -p ~/android/.repo/local_manifests
-          cp $GITHUB_WORKSPACE/local_manifests/raphael.xml ~/android/.repo/local_manifests/
+          if [ -f "$GITHUB_WORKSPACE/local_manifests/raphael.xml" ]; then
+            mkdir -p ~/android/.repo/local_manifests
+            cp "$GITHUB_WORKSPACE/local_manifests/raphael.xml" ~/android/.repo/local_manifests/
+            echo "local_manifests/raphael.xml copiado"
+          else
+            echo "Aviso: local_manifests/raphael.xml não encontrado em $GITHUB_WORKSPACE/local_manifests/ - continuando sem ele"
+            # Se esse arquivo for necessário, prefira falhar explicitamente:
+            # exit 1
+          fi
+
+      - name: Configure SSH for repo sync (optional)
+        if: ${{ secrets.REPO_SSH_KEY != '' }}
+        uses: webfactory/ssh-agent@v0.5.4
+        with:
+          ssh-private-key: ${{ secrets.REPO_SSH_KEY }}
+
+      - name: Add GitHub to known_hosts (only if using SSH)
+        if: ${{ secrets.REPO_SSH_KEY != '' }}
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan github.com >> ~/.ssh/known_hosts || true
 
       - name: Sync ROM sources (safe)
         run: |
@@ -148,7 +174,11 @@ jobs:
         run: |
           cd ~/android
           echo "=== Patching prebuilt depmod binaries in AOSP sources ==="
-          python3 $GITHUB_WORKSPACE/patch_depmod.py || true
+          if [ -f "$GITHUB_WORKSPACE/patch_depmod.py" ]; then
+            python3 "$GITHUB_WORKSPACE/patch_depmod.py" || true
+          else
+            echo "Aviso: $GITHUB_WORKSPACE/patch_depmod.py não encontrado; pulando patch_depmod.py"
+          fi
 
           echo "=== Creating dummy depmod modules structure ==="
           mkdir -p $DEPMOD_BASE/0.0
