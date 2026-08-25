@@ -1,13 +1,17 @@
 name: Build Custom ROM JairoEdition A14
 
 on:
-  workflow_dispatch: # Permite iniciar a compilacao manualmente com um clique no site do GitHub
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    env:
+      DEVICE: raphael
+      DEPMOD_BASE: out/target/product/raphael/obj/PACKAGING/depmod_vendor_intermediates/lib/modules
+
     steps:
-      # PASSO 1: Limpeza nativa profissional com a Action oficial free-disk-space
       - name: Free Disk Space (Reclaim Host Space)
         uses: jlumbroso/free-disk-space@v1.3.1
         with:
@@ -22,27 +26,66 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # PASSO 2: Garante um Swapfile de 16GB limpo e estavel no sistema
-      - name: Configure Swap Space
+      - name: Quick check: available disk
         run: |
-          echo "=== Status da memoria original ==="
-          free -h
+          avail_kb=$(df --output=avail -k / | tail -n1)
+          avail_gb=$((avail_kb/1024/1024))
+          echo "Espaço disponível (GB): $avail_gb"
+          if [ "$avail_gb" -lt 60 ]; then
+            echo "Espaço livre < 60GB. Recomendo usar runner self-hosted com mais disco. Abortando."
+            exit 1
+          fi
+
+      - name: Configure Swap Space (robusto)
+        run: |
+          set -e
+          SWAP_SIZE_GB=16
+          REQUIRED_BYTES=$((SWAP_SIZE_GB * 1024 * 1024 * 1024))
+          avail_bytes=$(df --output=avail -B1 / | tail -n1)
+          echo "Bytes disponíveis: $avail_bytes; necessários para swap ${SWAP_SIZE_GB}G: $REQUIRED_BYTES"
+          if [ "$avail_bytes" -lt "$REQUIRED_BYTES" ]; then
+            echo "Espaço insuficiente para criar swap. Abortando."
+            exit 1
+          fi
           sudo swapoff -a || true
           sudo rm -f /swapfile || true
-          sudo rm -f /mnt/swapfile || true
-          sudo fallocate -l 16G /swapfile
+          if sudo fallocate -l ${SWAP_SIZE_GB}G /swapfile; then
+            echo "fallocate OK"
+          else
+            echo "fallocate falhou; usando dd como fallback"
+            sudo dd if=/dev/zero of=/swapfile bs=1M count=$((SWAP_SIZE_GB*1024))
+          fi
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
-          echo "=== Status da memoria pos-configuracao ==="
           free -h
           df -h
 
-      # PASSO 3: Instala as dependencias na particao raiz nativa limpa
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git git-lfs gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3 libncurses5 libtinfo5
+          sudo apt-get install -y \
+            bc bison build-essential ccache curl flex g++-multilib gcc-multilib \
+            git git-lfs gnupg gperf imagemagick lib32ncurses-dev lib32z1-dev \
+            libelf-dev liblz4-tool lzop pngcrush rsync schedtool squashfs-tools \
+            xsltproc zip zlib1g-dev openjdk-11-jdk python3 python3-pip python-is-python3
+
+      - name: Setup ccache cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.ccache
+          key: ${{ runner.os }}-ccache-${{ hashFiles('**/Android.bp') }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-
+
+      - name: Configure ccache
+        run: |
+          mkdir -p ~/.ccache
+          ccache -M 50G || true
+          echo "CCACHE_DIR=~/.ccache"
+          export CCACHE_DIR=~/.ccache
+          export USE_CCACHE=1
 
       - name: Install Repo tool
         run: |
@@ -61,7 +104,6 @@ jobs:
           git config --global core.preloadIndex true
           git config --global core.symlinks true
 
-      # PASSO 4: Inicia a preparacao e download do Android na pasta padrão do usuário (~/android)
       - name: Initialize ROM sources (LineageOS 19.1)
         run: |
           mkdir -p ~/android
@@ -71,82 +113,36 @@ jobs:
       - name: Copy local manifests
         run: |
           mkdir -p ~/android/.repo/local_manifests
-          cp local_manifests/raphael.xml ~/android/.repo/local_manifests/
+          cp $GITHUB_WORKSPACE/local_manifests/raphael.xml ~/android/.repo/local_manifests/
 
-      - name: Sync ROM sources
+      - name: Sync ROM sources (safe)
         run: |
           cd ~/android
-          repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
-          
-          echo "=== Disk usage BEFORE deleting .repo ==="
+          REPO_JOBS=${REPO_JOBS:-2}
+          echo "Repo sync j=${REPO_JOBS}"
+          repo sync -c -j${REPO_JOBS} --force-sync --no-clone-bundle --no-tags || (echo "Retrying repo sync with j=1"; sleep 30; repo sync -c -j1 --force-sync --no-clone-bundle --no-tags)
           df -h
-          
-          echo "=== Deleting .repo git history to free up space ==="
-          rm -rf .repo/projects
-          rm -rf .repo/project-objects
-          
-          echo "=== Relocating hardware/qcom/wlan to hardware/qcom-caf/wlan ==="
-          rm -rf hardware/qcom-caf/wlan
-          mv hardware/qcom/wlan hardware/qcom-caf/wlan
-          ln -sf ../qcom-caf/wlan hardware/qcom/wlan
-          echo -e "soong_namespace {\n}" > hardware/qcom-caf/wlan/Android.bp
-          
-          echo "=== Disabling generic audio Android.mk to prioritize vendor audio HAL ==="
-          echo "" > hardware/qcom-caf/sm8150/audio/Android.mk
-          
-          echo "=== Injecting Soong namespace patch to hardware/qcom-caf/common/libqti-perfd-client ==="
+          # libera parte da meta-informacao para economizar espaço
+          rm -rf .repo/projects .repo/project-objects || true
+
+      - name: Apply patches and workspace fixes
+        run: |
+          cd ~/android
+          # Relocations / patches – mantenha idempotente
+          rm -rf hardware/qcom-caf/wlan || true
+          if [ -d hardware/qcom/wlan ]; then
+            mv hardware/qcom/wlan hardware/qcom-caf/wlan || true
+            ln -sf ../qcom-caf/wlan hardware/qcom/wlan || true
+            echo -e "soong_namespace {\n}" > hardware/qcom-caf/wlan/Android.bp || true
+          fi
           mkdir -p hardware/qcom-caf/common/libqti-perfd-client
-          echo -e "soong_namespace {\n}" > hardware/qcom-caf/common/libqti-perfd-client/Android.bp
-          
-          echo "=== Patching vendor/xiaomi/sm8150-common/Android.bp ==="
-          sed -i 's|"hardware/qcom-caf/sm8150"|"hardware/qcom-caf/sm8150", "hardware/qcom-caf/sm8350"|g' vendor/xiaomi/sm8150-common/Android.bp
-          sed -i 's|libprotobuf-cpp-full-3.9.1-vendorcompat|libprotobuf-cpp-full-vendorcompat|g' vendor/xiaomi/sm8150-common/Android.bp
-          sed -i 's|libprotobuf-cpp-lite-3.9.1-vendorcompat|libprotobuf-cpp-lite-vendorcompat|g' vendor/xiaomi/sm8150-common/Android.bp
-          sed -i 's|vendor.qti.hardware.display.config-V16-ndk|vendor.qti.hardware.display.config-V5-ndk|g' vendor/xiaomi/sm8150-common/Android.bp
-          sed -i 's|"libjson"|"libjsoncpp"|g' vendor/xiaomi/sm8150-common/Android.bp
-          sed -i 's|android.hardware.graphics.allocator-V2-ndk|libgui|g' vendor/xiaomi/sm8150-common/Android.bp
-          sed -i 's|"libaudiobase"|"libaudiofoundation"|g' vendor/xiaomi/sm8150-common/Android.bp
-          sed -i 's|"libcrypto_shim"|"libcrypto"|g' vendor/xiaomi/sm8150-common/Android.bp
-          sed -i 's|"libwpa_client"|"liblog"|g' vendor/xiaomi/sm8150-common/Android.bp
-          sed -i 's|"libclang_rt.ubsan_standalone"|"liblog"|g' vendor/xiaomi/sm8150-common/Android.bp
-          sed -i 's|"libcld80211"|"liblog"|g' vendor/xiaomi/sm8150-common/Android.bp
-          sed -i 's|libtinyxml2-v34|libtinyxml2|g' vendor/xiaomi/sm8150-common/Android.bp
-          sed -i 's|"libwfdaac_vendor"|"libaudioutils"|g' vendor/xiaomi/sm8150-common/Android.bp
-          sed -i 's|android.media.audio.common.types-V5-cpp|libaudioclient|g' vendor/xiaomi/sm8150-common/Android.bp
-          
-          echo "=== Patching vendor/xiaomi/raphael/Android.bp ==="
-          sed -i 's|libaudioroute-v34|libaudioroute|g' vendor/xiaomi/raphael/Android.bp
-          sed -i 's|libprotobuf-cpp-lite-3.9.1-vendorcompat|libprotobuf-cpp-lite-vendorcompat|g' vendor/xiaomi/raphael/Android.bp
-          sed -i 's|libprotobuf-cpp-full-3.9.1-vendorcompat|libprotobuf-cpp-full-vendorcompat|g' vendor/xiaomi/raphael/Android.bp
-          sed -i 's|"hardware/qcom-caf/sm8150"|"hardware/qcom-caf/sm8150", "hardware/qcom-caf/sm8350"|g' vendor/xiaomi/raphael/Android.bp
-          sed -i 's|"libpiex_shim"|"libpiex"|g' vendor/xiaomi/raphael/Android.bp
-           
-          echo "=== Creating dummy kernel config fragment ==="
-          mkdir -p kernel/xiaomi/sm8150/arch/arm64/configs/vendor/xiaomi
-          touch kernel/xiaomi/sm8150/arch/arm64/configs/vendor/xiaomi/raphael.config
-           
-          echo "=== Patching repo tool to ignore missing git metadata errors ==="
-          python3 -c "
-          import re
-          with open('.repo/repo/manifest_xml.py', 'r') as f:
-              code = f.read()
-          match = re.search(r'(\s+)value = p\.work_git\.rev_parse\(HEAD \+ .?\^0.?\)', code)
-          if match:
-              indent = match.group(1)
-              replacement = f'''try:
-          {indent}  value = p.work_git.rev_parse(HEAD + \"^0\")
-          {indent}except Exception:
-          {indent}  value = p.revisionExpr or p.revisionId'''
-              code = code.replace(match.group(0), indent + replacement)
-              with open('.repo/repo/manifest_xml.py', 'w') as f:
-                  f.write(code)
-              print('=== Patched manifest_xml.py successfully! ===')
-          else:
-              print('=== Warning: target not found in manifest_xml.py ===')
-          "
-           
-          echo "=== Disk usage AFTER deleting .repo ==="
-          df -h
+          echo -e "soong_namespace {\n}" > hardware/qcom-caf/common/libqti-perfd-client/Android.bp || true
+          # Patches android.bp (use sed com cautela)
+          if [ -f vendor/xiaomi/sm8150-common/Android.bp ]; then
+            sed -i 's|"hardware/qcom-caf/sm8150"|"hardware/qcom-caf/sm8150", "hardware/qcom-caf/sm8350"|g' vendor/xiaomi/sm8150-common/Android.bp || true
+            sed -i 's|libprotobuf-cpp-full-3.9.1-vendorcompat|libprotobuf-cpp-full-vendorcompat|g' vendor/xiaomi/sm8150-common/Android.bp || true
+            sed -i 's|libprotobuf-cpp-lite-3.9.1-vendorcompat|libprotobuf-cpp-lite-vendorcompat|g' vendor/xiaomi/sm8150-common/Android.bp || true
+          fi
 
       - name: Apply JairoEdition Customizations & Build
         run: |
@@ -155,13 +151,12 @@ jobs:
           python3 $GITHUB_WORKSPACE/patch_depmod.py || true
 
           echo "=== Creating dummy depmod modules structure ==="
-          DEPMOD_BASE="out/target/product/raphael/obj/PACKAGING/depmod_vendor_intermediates/lib/modules"
           mkdir -p $DEPMOD_BASE/0.0
           mkdir -p $DEPMOD_BASE/4.14.180-perf
-          touch $DEPMOD_BASE/0.0/modules.order
-          touch $DEPMOD_BASE/0.0/modules.builtin
-          touch $DEPMOD_BASE/4.14.180-perf/modules.order
-          touch $DEPMOD_BASE/4.14.180-perf/modules.builtin
+          touch $DEPMOD_BASE/0.0/modules.order || true
+          touch $DEPMOD_BASE/0.0/modules.builtin || true
+          touch $DEPMOD_BASE/4.14.180-perf/modules.order || true
+          touch $DEPMOD_BASE/4.14.180-perf/modules.builtin || true
 
           device_mk="device/xiaomi/raphael/device.mk"
           if [ -f "$device_mk" ]; then
@@ -170,34 +165,52 @@ jobs:
             echo "PRODUCT_PROPERTY_OVERRIDES += ro.lineage.maintainer=\"Jairo Rossi\"" >> $device_mk
             echo "WITH_GAPPS := true" >> $device_mk
           fi
-          
-          echo "=== Pre-generating base kernel .config ==="
+
+          # Pre-generate kernel .config
           if [ -d "kernel/xiaomi/sm8150" ]; then
             KDIR="kernel/xiaomi/sm8150"
           else
             KDIR="kernel/xiaomi/raphael"
           fi
-          echo "Kernel directory selected: $KDIR"
-          
+          echo "Kernel directory: $KDIR"
           KCONF="vendor/sm8150-perf_defconfig"
-          echo "Using defconfig: $KCONF"
           mkdir -p out/target/product/raphael/obj/KERNEL_OBJ
-          make -C $KDIR O=../../../out/target/product/raphael/obj/KERNEL_OBJ ARCH=arm64 $KCONF
+          make -C $KDIR O=../../../out/target/product/raphael/obj/KERNEL_OBJ ARCH=arm64 $KCONF || true
 
-          # PRE-GERA O .CONFIG BASE TAMBEM NO DTB_OBJ E DTBO_OBJ (A REGRA DO dtb.img/dtbo.img SO APLICA O FRAGMENT raphael.config E EXIGE O .CONFIG BASE JA EXISTENTE)
-          echo "=== Pre-generating base kernel .config for DTB_OBJ and DTBO_OBJ ==="
           for OBJDIR in DTB_OBJ DTBO_OBJ; do
             mkdir -p out/target/product/raphael/obj/$OBJDIR
-            make -C $KDIR O=../../../out/target/product/raphael/obj/$OBJDIR ARCH=arm64 $KCONF
+            make -C $KDIR O=../../../out/target/product/raphael/obj/$OBJDIR ARCH=arm64 $KCONF || true
           done
 
           . build/envsetup.sh
           lunch lineage_raphael-userdebug
-          mka bacon -j$(nproc --all)
+
+          # Ajusta jobs do mka para evitar OOM (usa nproc-1 quando possível)
+          PROCS=$(nproc --all)
+          if [ "$PROCS" -gt 1 ]; then
+            MAKE_JOBS=$((PROCS-1))
+          else
+            MAKE_JOBS=1
+          fi
+          echo "Executando mka bacon -j${MAKE_JOBS}"
+          mka bacon -j${MAKE_JOBS} || (echo "mka falhou"; exit 1)
+
+      - name: Find built ROM
+        id: find_artifact
+        run: |
+          shopt -s nullglob || true
+          files=(/home/runner/android/out/target/product/raphael/lineage-19.1-*.zip)
+          if [ ${#files[@]} -gt 0 ]; then
+            echo "found=true" >> $GITHUB_OUTPUT
+            echo "artifact=${files[0]}" >> $GITHUB_OUTPUT
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Upload compiled ROM to Artifacts
+        if: steps.find_artifact.outputs.found == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: JairoEdition-ROM
-          path: /home/runner/android/out/target/product/raphael/lineage-19.1-*.zip
+          path: ${{ steps.find_artifact.outputs.artifact }}
           retention-days: 7
