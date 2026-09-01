@@ -1,10 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
-  <!-- Jairo Edition: Device Tree e Kernel com alteracoes aplicadas (UDFPS screen-off, GApps embutido, kernel config) -->
+  <!-- Jairo Edition: todos os repos com alteracoes aplicadas nos forks do jairorossi -->
   <project name="jairorossi/android_device_xiaomi_raphael" path="device/xiaomi/raphael" remote="github" revision="lineage-19.1" />
   <project name="jairorossi/android_device_xiaomi_sm8150-common" path="device/xiaomi/sm8150-common" remote="github" revision="lineage-19.1" />
   <!-- Kernel na lineage-22.2: a branch lineage-19.1 deste repo foi reescrita e so tem vayu (sem raphael.config, sem dts do raphael) -->
   <project name="LineageOS/android_kernel_xiaomi_sm8150" path="kernel/xiaomi/sm8150" remote="github" revision="lineage-22.2" />
+
+  <!-- Framework e apps com customizacoes Jairo Edition -->
+  <project name="jairorossi/android_frameworks_base" path="frameworks/base" remote="github" revision="lineage-19.1" />
+  <project name="jairorossi/android_packages_apps_Settings" path="packages/apps/Settings" remote="github" revision="lineage-19.1" />
+  <project name="jairorossi/android_packages_apps_Trebuchet" path="packages/apps/Trebuchet" remote="github" revision="lineage-19.1" />
+  <project name="jairorossi/android_vendor_lineage" path="vendor/lineage" remote="github" revision="lineage-19.1" />
 
   <!-- Blobs proprietarios oficiais TheMuppets para lineage-19.1 (Android 12L).
        Repo monolitico com todos os devices Xiaomi; o GitHub foi derrubado por DMCA,
