@@ -3,7 +3,7 @@
     <remote name="gitlab" fetch="https://gitlab.com/" />
     <remote name="pixelexperience" fetch="https://github.com/PixelExperience/" />
 
-    <!-- FORKS COM MODIFICACOES E RECURSOS EXCLUSIVOS (Jairo Rossi) -->
+    <!-- REPOSITORIOS PRINCIPAIS E CUSTOMIZACOES EXCLUSIVAS (jairorossi) -->
     <remove-project name="LineageOS/android_frameworks_base" />
     <project name="jairorossi/android_frameworks_base" path="frameworks/base" remote="github" revision="lineage-19.1" />
 
@@ -20,19 +20,19 @@
     <!-- KERNEL (sm8150 - 100% Estavel, Boot Funcional) -->
     <project name="jairorossi/android_kernel_xiaomi_sm8150" path="kernel/xiaomi/sm8150" remote="github" revision="lineage-19.1" />
 
-    <!-- VENDOR BLOBS PROPRIETARIOS (TheMuppets GitLab) -->
-    <project name="the-muppets/proprietary_vendor_xiaomi" path="vendor/xiaomi" remote="gitlab" revision="lineage-19.1" />
-
-    <!-- HARDWARE INTERFACES XIAOMI -->
-    <project name="LineageOS/android_hardware_xiaomi" path="hardware/xiaomi" remote="github" revision="lineage-19.1" />
-
-    <!-- GAPPS (MindTheGapps Sigma / Android 12.1) -->
-    <project name="MindTheGapps/vendor_gapps" path="vendor/gapps" remote="gitlab" revision="sigma" />
+    <!-- HARDWARE INTERFACES XIAOMI (jairorossi) -->
+    <project name="jairorossi/android_hardware_xiaomi" path="hardware/xiaomi" remote="github" revision="lineage-19.1" />
 
     <!-- APPS DO JAIRO (Lawnchair 12.1, MIUI Gallery, MIUI Editor, GBoard, Markup via Git LFS) -->
     <project name="jairorossi/vendor_jairo_apps" path="vendor/jairo/apps" remote="github" revision="main" />
 
-    <!-- DEPENDENCIAS DE TEMA E EXTRAS -->
+    <!-- VENDOR BLOBS PROPRIETARIOS (TheMuppets GitLab Oficial) -->
+    <project name="the-muppets/proprietary_vendor_xiaomi" path="vendor/xiaomi" remote="gitlab" revision="lineage-19.1" />
+
+    <!-- GAPPS (MindTheGapps Sigma / Android 12.1 Oficial) -->
+    <project name="MindTheGapps/vendor_gapps" path="vendor/gapps" remote="gitlab" revision="sigma" />
+
+    <!-- DEPENDENCIAS AUXILIARES DE TEMA E EXTRAS -->
     <project name="forklineageos/android_external_themelib" path="external/themelib" remote="github" revision="sc" />
     <project name="forklineageos/android_external_colorkt" path="external/colorkt" remote="github" revision="sc" />
     <project name="packages_apps_FaceUnlockService" path="packages/apps/FaceUnlockService" remote="pixelexperience" revision="twelve" />
