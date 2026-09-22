@@ -1,24 +1,39 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
-  <!-- Jairo Edition: todos os repos com alteracoes aplicadas nos forks do jairorossi -->
-  <project name="jairorossi/android_device_xiaomi_raphael" path="device/xiaomi/raphael" remote="github" revision="lineage-19.1" />
-  <project name="jairorossi/android_device_xiaomi_sm8150-common" path="device/xiaomi/sm8150-common" remote="github" revision="lineage-19.1" />
-  <!-- Kernel na lineage-22.2: a branch lineage-19.1 deste repo foi reescrita e so tem vayu (sem raphael.config, sem dts do raphael) -->
-  <project name="LineageOS/android_kernel_xiaomi_sm8150" path="kernel/xiaomi/sm8150" remote="github" revision="lineage-22.2" />
+    <remote name="gitlab" fetch="https://gitlab.com/" />
+    <remote name="pixelexperience" fetch="https://github.com/PixelExperience/" />
 
-  <!-- Framework e apps com customizacoes Jairo Edition -->
-  <project name="jairorossi/android_frameworks_base" path="frameworks/base" remote="github" revision="lineage-19.1" />
-  <project name="jairorossi/android_packages_apps_Settings" path="packages/apps/Settings" remote="github" revision="lineage-19.1" />
-  <project name="jairorossi/android_packages_apps_Trebuchet" path="packages/apps/Trebuchet" remote="github" revision="lineage-19.1" />
-  <project name="jairorossi/android_vendor_lineage" path="vendor/lineage" remote="github" revision="lineage-19.1" />
+    <!-- FORKS COM MODIFICACOES E RECURSOS EXCLUSIVOS (Jairo Rossi) -->
+    <remove-project name="LineageOS/android_frameworks_base" />
+    <project name="jairorossi/android_frameworks_base" path="frameworks/base" remote="github" revision="lineage-19.1" />
 
-  <!-- Blobs proprietarios oficiais TheMuppets para lineage-19.1 (Android 12L).
-       Repo monolitico com todos os devices Xiaomi; o GitHub foi derrubado por DMCA,
-       o espelho vivo e o GitLab. ATENCAO: clone completo e pesado (~dezenas de GB);
-       em build local usamos git sparse-checkout so de raphael/ e sm8150-common/. -->
-  <remote name="muppets-gitlab" fetch="https://gitlab.com/the-muppets/" />
-  <project name="proprietary_vendor_xiaomi" path="vendor/xiaomi" remote="muppets-gitlab" revision="lineage-19.1" clone-depth="1" />
+    <remove-project name="LineageOS/android_packages_apps_Settings" />
+    <project name="jairorossi/android_packages_apps_Settings" path="packages/apps/Settings" remote="github" revision="lineage-19.1" />
 
-  <!-- Dependencia de hardware comum da Xiaomi -->
-  <project name="LineageOS/android_hardware_xiaomi" path="hardware/xiaomi" remote="github" revision="lineage-19.1" />
+    <remove-project name="LineageOS/android_vendor_lineage" />
+    <project name="jairorossi/android_vendor_lineage" path="vendor/lineage" remote="github" revision="lineage-19.1" />
+
+    <!-- ARVORES DE DISPOSITIVO (Xiaomi Mi 9T Pro / Redmi K20 Pro - raphael) -->
+    <project name="jairorossi/android_device_xiaomi_raphael" path="device/xiaomi/raphael" remote="github" revision="lineage-19.1" />
+    <project name="jairorossi/android_device_xiaomi_sm8150-common" path="device/xiaomi/sm8150-common" remote="github" revision="lineage-19.1" />
+
+    <!-- KERNEL (sm8150 - 100% Estavel, Boot Funcional) -->
+    <project name="jairorossi/android_kernel_xiaomi_sm8150" path="kernel/xiaomi/sm8150" remote="github" revision="lineage-19.1" />
+
+    <!-- VENDOR BLOBS PROPRIETARIOS (TheMuppets GitLab) -->
+    <project name="the-muppets/proprietary_vendor_xiaomi" path="vendor/xiaomi" remote="gitlab" revision="lineage-19.1" />
+
+    <!-- HARDWARE INTERFACES XIAOMI -->
+    <project name="LineageOS/android_hardware_xiaomi" path="hardware/xiaomi" remote="github" revision="lineage-19.1" />
+
+    <!-- GAPPS (MindTheGapps Sigma / Android 12.1) -->
+    <project name="MindTheGapps/vendor_gapps" path="vendor/gapps" remote="gitlab" revision="sigma" />
+
+    <!-- APPS DO JAIRO (Lawnchair 12.1, MIUI Gallery, MIUI Editor, GBoard, Markup via Git LFS) -->
+    <project name="jairorossi/vendor_jairo_apps" path="vendor/jairo/apps" remote="github" revision="main" />
+
+    <!-- DEPENDENCIAS DE TEMA E EXTRAS -->
+    <project name="forklineageos/android_external_themelib" path="external/themelib" remote="github" revision="sc" />
+    <project name="forklineageos/android_external_colorkt" path="external/colorkt" remote="github" revision="sc" />
+    <project name="packages_apps_FaceUnlockService" path="packages/apps/FaceUnlockService" remote="pixelexperience" revision="twelve" />
 </manifest>
